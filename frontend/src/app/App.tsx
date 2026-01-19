@@ -7,6 +7,7 @@ import { DonorDashboard } from '@/app/components/DonorDashboard';
 import { HospitalDashboard } from '@/app/components/HospitalDashboard';
 import { SponsorDashboard } from '@/app/components/SponsorDashboard';
 import { AdminDashboard } from '@/app/components/AdminDashboard';
+import { authAPI } from '@/services/api';
 
 type AppView = 'landing' | 'auth' | 'dashboard';
 
@@ -50,14 +51,24 @@ export default function App() {
     localStorage.setItem('organix_token', token);
   };
 
-  const handleLogout = () => {
-    setUser(null);
-    setAccessToken('');
-    setCurrentView('landing');
-    
-    // Clear session
-    localStorage.removeItem('organix_user');
-    localStorage.removeItem('organix_token');
+  const handleLogout = async () => {
+    try {
+      // Call backend logout API to log audit event
+      await authAPI.signout();
+    } catch (error) {
+      console.error('Logout API error:', error);
+      // Continue with logout even if API call fails
+    } finally {
+      // Clear local state and storage
+      setUser(null);
+      setAccessToken('');
+      setCurrentView('landing');
+      
+      // Clear session from localStorage
+      localStorage.removeItem('organix_user');
+      localStorage.removeItem('organix_token');
+      localStorage.removeItem('accessToken'); // Also clear the token used by API service
+    }
   };
 
   const renderDashboard = () => {

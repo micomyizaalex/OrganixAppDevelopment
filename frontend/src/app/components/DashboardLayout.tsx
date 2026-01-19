@@ -72,13 +72,13 @@ export function DashboardLayout({ children, user, onLogout }: DashboardLayoutPro
                   <div className="px-2 py-1.5 text-sm text-muted-foreground">
                     {user.email}
                   </div>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={onLogout}>
-                    <LogOut className="w-4 h-4 mr-2" />
-                    Sign Out
-                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+
+              <Button variant="outline" size="sm" onClick={onLogout}>
+                <LogOut className="w-4 h-4 mr-2" />
+                Sign Out
+              </Button>
             </div>
           </div>
         </div>

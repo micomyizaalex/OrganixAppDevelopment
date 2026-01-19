@@ -53,15 +53,31 @@ export const authAPI = {
       body: JSON.stringify({ email, password, name, role }),
     }),
 
-  signin: (email, password) =>
-    apiRequest('/auth/signin', {
+  signin: async (email, password) => {
+    const response = await apiRequest('/auth/signin', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
-    }),
+    });
+    
+    // Store token for future requests
+    if (response.accessToken) {
+      setAuthToken(response.accessToken);
+    }
+    
+    return response;
+  },
 
   getSession: () => apiRequest('/auth/session'),
 
-  signout: () => apiRequest('/auth/signout', { method: 'POST' }),
+  signout: async () => {
+    try {
+      const response = await apiRequest('/auth/signout', { method: 'POST' });
+      return response;
+    } finally {
+      // Always clear token, even if request fails
+      setAuthToken(null);
+    }
+  },
 };
 
 /**
