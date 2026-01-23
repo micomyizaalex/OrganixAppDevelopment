@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
-import { Heart, Shield, CheckCircle, XCircle, AlertCircle, Info } from 'lucide-react';
+import { Heart, Shield, CheckCircle, XCircle, AlertCircle, Info, User as UserIcon } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/app/components/ui/alert';
 import { RadioGroup, RadioGroupItem } from '@/app/components/ui/radio-group';
 import { Label } from '@/app/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import { getSupabaseConfig } from '@/app/utils/supabase-config';
+import { ProfileForm } from '@/app/components/ProfileForm';
+import DonorRegistration from '@/app/components/DonorRegistration';
 
 interface DonorDashboardProps {
   user: any;
@@ -161,12 +164,25 @@ export function DonorDashboard({ user, accessToken }: DonorDashboardProps) {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Donor Dashboard</h1>
-        <p className="text-muted-foreground mt-1">Your voluntary contribution can save lives</p>
-      </div>
+    <Tabs defaultValue="dashboard" className="space-y-6">
+      <TabsList>
+        <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+        <TabsTrigger value="registration">
+          <Heart className="w-4 h-4 mr-2" />
+          Donor Registration
+        </TabsTrigger>
+        <TabsTrigger value="profile">
+          <UserIcon className="w-4 h-4 mr-2" />
+          My Profile
+        </TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="dashboard" className="space-y-6">
+        {/* Header */}
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Donor Dashboard</h1>
+          <p className="text-muted-foreground mt-1">Your voluntary contribution can save lives</p>
+        </div>
 
       {/* Consent Status */}
       <Card className="border-2 border-secondary">
@@ -428,6 +444,15 @@ export function DonorDashboard({ user, accessToken }: DonorDashboardProps) {
           </div>
         </CardContent>
       </Card>
-    </div>
+      </TabsContent>
+
+      <TabsContent value="registration">
+        <DonorRegistration userId={user.id} accessToken={accessToken} />
+      </TabsContent>
+
+      <TabsContent value="profile">
+        <ProfileForm userId={user.id} userRole={user.role} accessToken={accessToken} />
+      </TabsContent>
+    </Tabs>
   );
 }

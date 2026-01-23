@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { DollarSign, Heart, TrendingUp, Users, AlertCircle } from 'lucide-react';
+import { DollarSign, Heart, TrendingUp, Users, AlertCircle, User as UserIcon } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
@@ -8,7 +8,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { Progress } from '@/app/components/ui/progress';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import { getSupabaseConfig } from '@/app/utils/supabase-config';
+import { ProfileForm } from '@/app/components/ProfileForm';
 
 interface SponsorDashboardProps {
   user: any;
@@ -131,12 +133,21 @@ export function SponsorDashboard({ user, accessToken }: SponsorDashboardProps) {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Sponsor Dashboard</h1>
-        <p className="text-muted-foreground mt-1">Fund transplant cases and track your impact</p>
-      </div>
+    <Tabs defaultValue="dashboard" className="space-y-6">
+      <TabsList>
+        <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+        <TabsTrigger value="profile">
+          <UserIcon className="w-4 h-4 mr-2" />
+          My Profile
+        </TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="dashboard" className="space-y-6">
+        {/* Header */}
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Sponsor Dashboard</h1>
+          <p className="text-muted-foreground mt-1">Fund transplant cases and track your impact</p>
+        </div>
 
       {error && (
         <Alert variant="destructive">
@@ -355,6 +366,11 @@ export function SponsorDashboard({ user, accessToken }: SponsorDashboardProps) {
           All transactions are logged for transparency. Donor identities are never disclosed to sponsors.
         </AlertDescription>
       </Alert>
-    </div>
+      </TabsContent>
+
+      <TabsContent value="profile">
+        <ProfileForm userId={user.id} userRole={user.role} accessToken={accessToken} />
+      </TabsContent>
+    </Tabs>
   );
 }

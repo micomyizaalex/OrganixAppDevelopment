@@ -14,11 +14,26 @@ export const caseController = {
         return res.status(403).json({ error: 'Only patients can create cases' });
       }
 
-      const { organNeeded, urgencyLevel, notes } = req.body;
+      const { 
+        organNeeded, 
+        urgencyLevel, 
+        notes,
+        bloodType,
+        patientAge,
+        latestLabResults,
+        chronicIllnesses,
+        additionalMedicalInfo
+      } = req.body;
 
       if (!organNeeded || !urgencyLevel) {
         return res.status(400).json({
           error: 'Missing required fields: organNeeded, urgencyLevel'
+        });
+      }
+
+      if (!bloodType) {
+        return res.status(400).json({
+          error: 'Blood type is required for donor matching'
         });
       }
 
@@ -27,7 +42,12 @@ export const caseController = {
         req.user.name,
         organNeeded,
         urgencyLevel,
-        notes || ''
+        notes || '',
+        bloodType,
+        patientAge,
+        latestLabResults || '',
+        chronicIllnesses || '',
+        additionalMedicalInfo || ''
       );
 
       // Log audit event
@@ -114,6 +134,43 @@ export const caseController = {
     } catch (error) {
       console.error('Update case error:', error);
       res.status(500).json({ error: error.message || 'Failed to update case' });
+    }
+  },
+
+  /**
+   * Update case files (lab results and medical documents)
+   */
+  async updateCaseFiles(req, res) {
+    try {
+      const { caseId } = req.params;
+      const { labResultsFiles, medicalInfoFiles } = req.body;
+
+      // Verify the case belongs to the user
+      const existingCase = await caseService.getCaseById(caseId);
+      
+      if (!existingCase) {
+        return res.status(404).json({ error: 'Case not found' });
+      }
+
+      if (existingCase.patient_id !== req.user.id && req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Unauthorized to update this case' });
+      }
+
+      // Update case with file information
+      const updatedCase = await caseService.updateCaseFiles(
+        caseId,
+        labResultsFiles || [],
+        medicalInfoFiles || []
+      );
+
+      // Log audit event
+      await auditService.logEvent(req.user.id, 'CASE_FILES_UPDATED', { caseId });
+
+      res.json({ success: true, case: updatedCase });
+
+    } catch (error) {
+      console.error('Update case files error:', error);
+      res.status(500).json({ error: error.message || 'Failed to update case files' });
     }
   }
 };

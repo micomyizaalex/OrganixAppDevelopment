@@ -15,8 +15,22 @@ const app = express();
 // ==================== MIDDLEWARE ====================
 
 // CORS configuration
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:5175',
+  serverConfig.corsOrigin
+];
+
 app.use(cors({
-  origin: serverConfig.corsOrigin,
+  origin: function(origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, etc)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
   credentials: true
 }));
 

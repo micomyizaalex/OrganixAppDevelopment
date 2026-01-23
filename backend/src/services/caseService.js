@@ -7,19 +7,36 @@ export const caseService = {
   /**
    * Create a new case (patients only)
    */
-  async createCase(patientId, patientName, organNeeded, urgencyLevel, notes = '') {
+  async createCase(
+    patientId, 
+    patientName, 
+    organNeeded, 
+    urgencyLevel, 
+    notes = '',
+    bloodType = null,
+    patientAge = null,
+    latestLabResults = '',
+    chronicIllnesses = '',
+    additionalMedicalInfo = ''
+  ) {
     const { data: newCase, error } = await supabase
       .from('cases')
       .insert({
         patient_id: patientId,
         organ_needed: organNeeded,
         urgency_level: urgencyLevel,
-        notes
+        notes,
+        blood_type: bloodType,
+        patient_age: patientAge,
+        latest_lab_results: latestLabResults,
+        chronic_illnesses: chronicIllnesses,
+        additional_medical_info: additionalMedicalInfo
       })
       .select()
       .single();
 
     if (error) {
+      console.error('Case creation error:', error);
       throw new Error('Failed to create case');
     }
 
@@ -107,6 +124,45 @@ export const caseService = {
   },
 
   /**
+   * Get case by ID
+   */
+  async getCaseById(caseId) {
+    const { data: caseData, error } = await supabase
+      .from('cases')
+      .select('*')
+      .eq('id', caseId)
+      .single();
+
+    if (error || !caseData) {
+      return null;
+    }
+
+    return caseData;
+  },
+
+  /**
+   * Update case files
+   */
+  async updateCaseFiles(caseId, labResultsFiles, medicalInfoFiles) {
+    const { data: updatedCase, error } = await supabase
+      .from('cases')
+      .update({
+        lab_results_files: labResultsFiles,
+        medical_info_files: medicalInfoFiles
+      })
+      .eq('id', caseId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Update case files error:', error);
+      throw new Error('Failed to update case files');
+    }
+
+    return updatedCase;
+  },
+
+  /**
    * Format case for response
    */
   formatCase(caseData, patientName = null) {
@@ -124,7 +180,14 @@ export const caseService = {
       assignedHospitalId: caseData.assigned_hospital_id,
       fundingAmount: parseFloat(caseData.funding_amount || 0),
       fundingGoal: parseFloat(caseData.funding_goal || 0),
-      sponsors: caseData.sponsors || []
+      sponsors: caseData.sponsors || [],
+      bloodType: caseData.blood_type,
+      patientAge: caseData.patient_age,
+      latestLabResults: caseData.latest_lab_results,
+      chronicIllnesses: caseData.chronic_illnesses,
+      additionalMedicalInfo: caseData.additional_medical_info,
+      labResultsFiles: caseData.lab_results_files || [],
+      medicalInfoFiles: caseData.medical_info_files || []
     };
   }
 };

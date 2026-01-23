@@ -17,4 +17,7 @@ router.get('/', verifyAuth, caseController.getCases);
 // PUT /cases/:caseId - Update a case (hospitals/admins only)
 router.put('/:caseId', verifyAuth, caseController.updateCase);
 
+// PUT /cases/:caseId/files - Update case files (patients/admins only)
+router.put('/:caseId/files', verifyAuth, caseController.updateCaseFiles);
+
 export default router;

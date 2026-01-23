@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Clock, CheckCircle, DollarSign, Activity, AlertCircle } from 'lucide-react';
+import { Plus, Clock, CheckCircle, DollarSign, Activity, AlertCircle, User as UserIcon, HeartPulse, Droplet, FileText, Loader2 } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Badge } from '@/app/components/ui/badge';
@@ -10,7 +10,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/app/components/ui/textarea';
 import { Alert, AlertDescription } from '@/app/components/ui/alert';
 import { Progress } from '@/app/components/ui/progress';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import { getSupabaseConfig } from '@/app/utils/supabase-config';
+import { ProfileForm } from '@/app/components/ProfileForm';
+import { getProfile } from '@/services/profileService';
+import { FileUpload } from '@/app/components/FileUpload';
+import { uploadFiles, type UploadedFile } from '@/services/fileUploadService';
 
 interface PatientDashboardProps {
   user: any;
@@ -23,14 +28,46 @@ export function PatientDashboard({ user, accessToken }: PatientDashboardProps) {
   const [error, setError] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   
-  // New case form
+  // New case form - basic fields
   const [organNeeded, setOrganNeeded] = useState('');
   const [urgencyLevel, setUrgencyLevel] = useState('');
   const [notes, setNotes] = useState('');
+  
+  // New case form - medical fields
+  const [bloodType, setBloodType] = useState('');
+  const [patientAge, setPatientAge] = useState<number | null>(null);
+  const [chronicIllnesses, setChronicIllnesses] = useState('');
+  const [additionalMedicalInfo, setAdditionalMedicalInfo] = useState('');
+  
+  // File uploads
+  const [labResultsFiles, setLabResultsFiles] = useState<File[]>([]);
+  const [medicalInfoFiles, setMedicalInfoFiles] = useState<File[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     fetchCases();
+    fetchPatientAge();
   }, []);
+
+  const fetchPatientAge = async () => {
+    try {
+      const profileResponse = await getProfile(user.id, 'patient');
+      if (profileResponse.success && profileResponse.data?.date_of_birth) {
+        const birthDate = new Date(profileResponse.data.date_of_birth);
+        const today = new Date();
+        let age = today.getFullYear() - birthDate.getFullYear();
+        const monthDiff = today.getMonth() - birthDate.getMonth();
+        
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+          age--;
+        }
+        
+        setPatientAge(age);
+      }
+    } catch (err) {
+      console.error('Failed to fetch patient age:', err);
+    }
+  };
 
   const fetchCases = async () => {
     try {
@@ -62,9 +99,19 @@ export function PatientDashboard({ user, accessToken }: PatientDashboardProps) {
   const handleCreateCase = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setIsUploading(true);
+
+    // Validation
+    if (!organNeeded || !urgencyLevel || !bloodType) {
+      setError('Please fill in all required fields: Organ Needed, Urgency Level, and Blood Type');
+      setIsUploading(false);
+      return;
+    }
 
     try {
       const config = getSupabaseConfig();
+      
+      // First, create the case without files
       const response = await fetch(
         `${config.apiUrl}/cases`,
         {
@@ -76,25 +123,104 @@ export function PatientDashboard({ user, accessToken }: PatientDashboardProps) {
           body: JSON.stringify({
             organNeeded,
             urgencyLevel,
-            notes
+            notes,
+            bloodType,
+            patientAge,
+            chronicIllnesses,
+            additionalMedicalInfo
           })
         }
       );
 
       const data = await response.json();
 
-      if (response.ok) {
-        setCases([data.case, ...cases]);
-        setIsDialogOpen(false);
-        setOrganNeeded('');
-        setUrgencyLevel('');
-        setNotes('');
-      } else {
+      if (!response.ok) {
         setError(data.error || 'Failed to create case');
+        setIsUploading(false);
+        return;
       }
+
+      const newCaseId = data.case.id;
+      const uploadedLabFiles: UploadedFile[] = [];
+      const uploadedMedicalFiles: UploadedFile[] = [];
+
+      // Upload lab results files if any
+      if (labResultsFiles.length > 0) {
+        const labUploadResult = await uploadFiles(
+          labResultsFiles,
+          user.id,
+          newCaseId,
+          'lab-results'
+        );
+
+        if (!labUploadResult.success) {
+          setError(`Case created, but file upload failed: ${labUploadResult.errors[0]?.error}`);
+          setIsUploading(false);
+          setCases([data.case, ...cases]);
+          return;
+        }
+
+        uploadedLabFiles.push(...labUploadResult.uploadedFiles);
+      }
+
+      // Upload medical info files if any
+      if (medicalInfoFiles.length > 0) {
+        const medicalUploadResult = await uploadFiles(
+          medicalInfoFiles,
+          user.id,
+          newCaseId,
+          'medical-info'
+        );
+
+        if (!medicalUploadResult.success) {
+          setError(`Case created, but file upload failed: ${medicalUploadResult.errors[0]?.error}`);
+          setIsUploading(false);
+          setCases([data.case, ...cases]);
+          return;
+        }
+
+        uploadedMedicalFiles.push(...medicalUploadResult.uploadedFiles);
+      }
+
+      // Update case with file URLs if files were uploaded
+      if (uploadedLabFiles.length > 0 || uploadedMedicalFiles.length > 0) {
+        const updateResponse = await fetch(
+          `${config.apiUrl}/cases/${newCaseId}/files`,
+          {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${accessToken}`
+            },
+            body: JSON.stringify({
+              labResultsFiles: uploadedLabFiles,
+              medicalInfoFiles: uploadedMedicalFiles
+            })
+          }
+        );
+
+        if (!updateResponse.ok) {
+          console.error('Failed to update case with file URLs');
+        }
+      }
+
+      // Success - reset form and update cases list
+      setCases([data.case, ...cases]);
+      setIsDialogOpen(false);
+      setOrganNeeded('');
+      setUrgencyLevel('');
+      setNotes('');
+      setBloodType('');
+      setChronicIllnesses('');
+      setAdditionalMedicalInfo('');
+      setLabResultsFiles([]);
+      setMedicalInfoFiles([]);
+
     } catch (err) {
       console.error('Create case error:', err);
-      setError('Network error');
+      setError('Network error. Please try again.');
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -144,85 +270,256 @@ export function PatientDashboard({ user, accessToken }: PatientDashboardProps) {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Patient Dashboard</h1>
-          <p className="text-muted-foreground mt-1">Manage your cases and track your journey</p>
-        </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="w-4 h-4 mr-2" />
-              Create New Case
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create New Case</DialogTitle>
-              <DialogDescription>
-                Register your organ transplant case. All information is confidential.
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleCreateCase} className="space-y-4">
-              {error && (
-                <Alert variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
+    <Tabs defaultValue="dashboard" className="space-y-6">
+      <TabsList>
+        <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+        <TabsTrigger value="profile">
+          <UserIcon className="w-4 h-4 mr-2" />
+          My Profile
+        </TabsTrigger>
+      </TabsList>
 
-              <div className="space-y-2">
-                <Label htmlFor="organ">Organ Needed</Label>
-                <Select value={organNeeded} onValueChange={setOrganNeeded}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select organ type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="kidney">Kidney</SelectItem>
-                    <SelectItem value="liver">Liver</SelectItem>
-                    <SelectItem value="heart">Heart</SelectItem>
-                    <SelectItem value="lung">Lung</SelectItem>
-                    <SelectItem value="pancreas">Pancreas</SelectItem>
-                    <SelectItem value="cornea">Cornea</SelectItem>
-                    <SelectItem value="bone-marrow">Bone Marrow</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="urgency">Urgency Level</Label>
-                <Select value={urgencyLevel} onValueChange={setUrgencyLevel}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select urgency level" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="critical">Critical</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="low">Low</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="notes">Additional Notes</Label>
-                <Textarea
-                  id="notes"
-                  placeholder="Any additional information..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={4}
-                />
-              </div>
-
-              <Button type="submit" className="w-full">
-                Create Case
+      <TabsContent value="dashboard" className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Patient Dashboard</h1>
+            <p className="text-muted-foreground mt-1">Manage your cases and track your journey</p>
+          </div>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="w-4 h-4 mr-2" />
+                Create New Case
               </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-[#0077B6] to-[#0095D9] bg-clip-text text-transparent">
+                  Create New Case
+                </DialogTitle>
+                <DialogDescription>
+                  Register your organ transplant case. All information is confidential and will help us find the best match.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleCreateCase} className="space-y-6">
+                {error && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="w-4 h-4" />
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
+
+                {/* Basic Information Section */}
+                <div className="space-y-4 p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border-l-4 border-[#0077B6]">
+                  <div className="flex items-center gap-2 mb-3">
+                    <HeartPulse className="w-5 h-5 text-[#0077B6]" />
+                    <h3 className="font-semibold text-lg text-[#0077B6]">Basic Information</h3>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="organ" className="text-sm font-medium">
+                      Organ Needed <span className="text-red-500">*</span>
+                    </Label>
+                    <Select value={organNeeded} onValueChange={setOrganNeeded} required>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select organ type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="kidney">Kidney</SelectItem>
+                        <SelectItem value="liver">Liver</SelectItem>
+                        <SelectItem value="heart">Heart</SelectItem>
+                        <SelectItem value="lung">Lung</SelectItem>
+                        <SelectItem value="pancreas">Pancreas</SelectItem>
+                        <SelectItem value="cornea">Cornea</SelectItem>
+                        <SelectItem value="bone-marrow">Bone Marrow</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="urgency" className="text-sm font-medium">
+                      Urgency Level <span className="text-red-500">*</span>
+                    </Label>
+                    <Select value={urgencyLevel} onValueChange={setUrgencyLevel} required>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select urgency level" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="critical">
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                            Critical
+                          </span>
+                        </SelectItem>
+                        <SelectItem value="high">
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
+                            High
+                          </span>
+                        </SelectItem>
+                        <SelectItem value="medium">
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
+                            Medium
+                          </span>
+                        </SelectItem>
+                        <SelectItem value="low">
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                            Low
+                          </span>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Medical Information Section */}
+                <div className="space-y-4 p-4 bg-gradient-to-r from-green-50 to-green-100 rounded-lg border-l-4 border-[#27AE60]">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Droplet className="w-5 h-5 text-[#27AE60]" />
+                    <h3 className="font-semibold text-lg text-[#27AE60]">Medical Information</h3>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="bloodType" className="text-sm font-medium">
+                        Blood Type <span className="text-red-500">*</span>
+                      </Label>
+                      <Select value={bloodType} onValueChange={setBloodType} required>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select blood type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="A+">A+</SelectItem>
+                          <SelectItem value="A-">A-</SelectItem>
+                          <SelectItem value="B+">B+</SelectItem>
+                          <SelectItem value="B-">B-</SelectItem>
+                          <SelectItem value="AB+">AB+</SelectItem>
+                          <SelectItem value="AB-">AB-</SelectItem>
+                          <SelectItem value="O+">O+</SelectItem>
+                          <SelectItem value="O-">O-</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="age" className="text-sm font-medium">
+                        Age
+                      </Label>
+                      <Input
+                        id="age"
+                        type="text"
+                        value={patientAge !== null ? `${patientAge} years` : 'Not available'}
+                        disabled
+                        className="bg-gray-100"
+                      />
+                      {patientAge === null && (
+                        <p className="text-xs text-muted-foreground">
+                          Please update your date of birth in your profile
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="chronicIllnesses" className="text-sm font-medium">
+                      Chronic Illnesses
+                    </Label>
+                    <Textarea
+                      id="chronicIllnesses"
+                      placeholder="List any chronic conditions (e.g., diabetes, hypertension)..."
+                      value={chronicIllnesses}
+                      onChange={(e) => setChronicIllnesses(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
+
+                  <FileUpload
+                    label="Latest Lab Results"
+                    description="Upload your recent lab test results, blood work, imaging reports, etc."
+                    value={labResultsFiles}
+                    onChange={setLabResultsFiles}
+                    multiple={true}
+                    maxFiles={5}
+                  />
+                </div>
+
+                {/* Additional Information Section */}
+                <div className="space-y-4 p-4 bg-gradient-to-r from-slate-50 to-slate-100 rounded-lg border-l-4 border-[#2B2D42]">
+                  <div className="flex items-center gap-2 mb-3">
+                    <FileText className="w-5 h-5 text-[#2B2D42]" />
+                    <h3 className="font-semibold text-lg text-[#2B2D42]">Additional Information</h3>
+                  </div>
+
+                  <FileUpload
+                    label="Other Medical Documents"
+                    description="Upload any other relevant medical information (prescriptions, doctor's notes, medical history, etc.)"
+                    value={medicalInfoFiles}
+                    onChange={setMedicalInfoFiles}
+                    multiple={true}
+                    maxFiles={5}
+                  />
+
+                  <div className="space-y-2">
+                    <Label htmlFor="additionalMedicalInfo" className="text-sm font-medium">
+                      Other Medical Information (Text)
+                    </Label>
+                    <Textarea
+                      id="additionalMedicalInfo"
+                      placeholder="Any other medical information that might be relevant for donor matching..."
+                      value={additionalMedicalInfo}
+                      onChange={(e) => setAdditionalMedicalInfo(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="notes" className="text-sm font-medium">
+                      Additional Notes
+                    </Label>
+                    <Textarea
+                      id="notes"
+                      placeholder="Any additional information or special circumstances..."
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      rows={4}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t">\n                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => setIsDialogOpen(false)}
+                    disabled={isUploading}
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    type="submit" 
+                    className="flex-1 bg-[#0077B6] hover:bg-[#005F8F]"
+                    disabled={isUploading}
+                  >
+                    {isUploading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Creating & Uploading...
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Create Case
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
 
       {/* Stats */}
       <div className="grid md:grid-cols-4 gap-6">
@@ -382,6 +679,11 @@ export function PatientDashboard({ user, accessToken }: PatientDashboardProps) {
           All medical decisions are made by licensed hospitals. Organix coordinates, but does not provide medical care.
         </AlertDescription>
       </Alert>
-    </div>
+      </TabsContent>
+
+      <TabsContent value="profile">
+        <ProfileForm userId={user.id} userRole={user.role} accessToken={accessToken} />
+      </TabsContent>
+    </Tabs>
   );
 }
